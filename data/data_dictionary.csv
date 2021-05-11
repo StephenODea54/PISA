@@ -1,0 +1,17 @@
+Variable,Definition
+country,Country (3 character code)
+mother_educ,"Highest level of mother's education. Ranges from ""less than ISCED1"" to ""ISCED 3A"""
+father_educ,"Highest level of father's education. Ranges from ""less than ISCED1"" to ""ISCED 3A"""
+gender,Gender of the student. 
+computer,Possession of computer
+internet,Access to internet
+math,score in mathematics
+desk,Possession of desk to study at
+room,Possession of a room of your own
+dishwasher,Possession of a dishwasher
+television,Number of televisions
+computer_n,Number of computers
+car,Number of cars
+book,Number of books
+wealth,Family wealth
+escs,"Index of economic, social and cultural status"
