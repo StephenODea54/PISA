@@ -1,0 +1,176 @@
+---
+title: "PISA Project"
+mainfont: DejaVu Sans
+output:
+  flexdashboard::flex_dashboard:
+    storyboard: true
+  pdf_document:
+    latex_engine: xelatex
+  word_document: default
+font-family: Times New Roman
+---
+  
+  
+```{r, message = FALSE, echo = F} 
+library(knitr)
+library(skimr)
+library(tidyverse)
+library(tidymodels)
+library(vip)
+library(kableExtra)
+library(gridExtra)
+library(DT)
+library(correlationfunnel)
+```
+
+```{r, include = FALSE}
+data_dictionary <- read_csv("data/data_dictionary.csv")
+student_data <- readRDS("./data/student_data.rds")
+summarized_data <- readRDS("./data/summarized_data.rds")
+map_data <- readRDS("./data/map_data.rds")
+lasso_fit <- readRDS("./models/lasso_fit.rds")
+lasso_final_workflow <- readRDS("./models/lasso_final_workflow.rds")
+xgb_fit <- readRDS("./models/xgb_fit.rds")
+xgb_final_workflow <- readRDS("./models/xgb_final_workflow.rds")
+```
+
+### Project Overview
+The Programme for International Student Assessment, otherwise known as PISA, is a worldwide survey conducted by the Organisation for Economic Co-operation and Development (OECD) to evaluate the performance of math, reading, and science scores of 15 year olds. In addition to the scores, there are many aspects of the children's lives included in the survey as well (parent's education, number of televisions, wealth, etc). The goal of this project is to predict student performance in math without data pertaining to location (country).
+
+### Data Description
+As mentioned earlier, the OECD is responsible for the collection of this data. The results of the survey may be found at the following link: <https://www.oecd.org/pisa/data/>. On the website you will find the survey for the years 2000 - 2018, as well as visualizations showing the performance members of the children.
+
+In its entirety, there are over 64 million observations. For computational simplicity, only the year 2012 was considered. The data was retrieved using the learningtower R package created by Kevin Wang. The package allows users to easily access information from the OECD's PISA survey. For more information on learningtower, visit the following github repository: <https://github.com/kevinwang09/learningtower>.
+
+A description of the variables is included below.
+
+```{r, echo = FALSE}
+datatable(data_dictionary)
+```
+
+
+### Data Summary
+
+```{r, echo = FALSE}
+kable(summary(student_data), caption = "Summary Statistics") %>%
+  kable_styling() %>%
+  scroll_box()
+```
+
+*** 
+One feature worth mentioning is 'mother_educ' and 'father_educ'. These variables represent the level of education obtained by the parents. The OECD categorizes these levels as ISCED 1, 2, and 3. The types of educational levels are not uniform for all the countries in the survey. For example, the mode of the length of primary school is 6 years. This is different than the length of primary school in Germany which is 4 years. To make these ideas relatable, included is a description of categories and their equivalent in the American school system.
+
+* Category 1: primary level of education (K - Grade 6).
+* Category 2: secondary level of education (Grade 7 -  Grade 9).
+* Category 3: upper secondary level of education (Grade 10 - 12).
+
+For an exhaustive description, visit <https://www.oecd.org/education/1841854.pdf>.
+
+### Correlations
+
+```{r, echo = FALSE}
+student_data %>%
+  select(-year, -country, -school_id, -student_id) %>%
+  binarize(n_bins = 3, thresh_infreq = 0.01, name_infreq = "OTHER", one_hot = TRUE) %>%
+  correlate(math__523.0643_Inf) %>%
+  plot_correlation_funnel() +
+  labs(x = "Correlation",
+       y = "Feature")
+```
+
+***
+In order to account for the categorical variables in the data, the correlation analysis was done using the correlationfunnel package in r. This package converts numeric features to categorical by "binning" them, and then one-hot encodes all of the data.
+
+Since math score is numeric, it was binned into three separate categories. Everything to the left of the dotted line shows which values of the features correlate with the lower math scores, and everything to the right of the dotted line shows which values of the features correlate with higher math scores.
+
+Economic index is the highest correlated variable. Other important features include the number of books owned, whether the individual has internet access, parental education, and if the child has a computer or not. The existence of a television is the last significant feature. Also, gender is a poorly correlated feature.
+
+What is interesting is where parental education lands in the funnel. One would expect that the education level of the parents would have a greater impact on test scores in comparison to the other observations.
+
+
+### School Perfomance by Location
+
+```{r, echo = FALSE}
+map_avg_math <- ggplot(map_data, aes(long, lat, group = group, fill = avg_math_score)) + geom_polygon() +
+  labs(title = "Average Math Score by Country")
+
+map_avg_wealth <- ggplot(map_data, aes(long, lat, group = group, fill = avg_wealth)) + geom_polygon() +
+  labs(title = "Average Wealth by Country")
+
+grid.arrange(map_avg_math, map_avg_wealth,
+             nrow = 2)
+```
+
+### LASSO
+
+```{r lasso, echo = F}
+lasso_metrics <- lasso_fit %>%
+  collect_metrics() %>%
+  select(-.estimator, -.config) %>%
+  rename(Metric = .metric,
+         Estimate = .estimate) %>%
+  tableGrob(rows = NULL)
+
+lasso_parameter_estimates <- fit(lasso_final_workflow,
+    student_data %>%
+      select(-country, -school_id, -year, -student_id)) %>%
+  pull_workflow_fit() %>%
+  tidy() %>%
+  filter(term != "(Intercept)") %>%
+  ggplot(aes(reorder(term, estimate), estimate)) +
+  geom_bar(stat = "identity") +
+  coord_flip() +
+  labs(title = "LASSO Regression Parameter Estimates",
+       x = "Term",
+       y = "Estimate")
+
+grid.arrange(lasso_parameter_estimates, lasso_metrics,
+             ncol=2,
+             widths = c(3,2))
+```
+
+***
+In the positive direction, the number of books in the household hold the highest magnitude. Other noteworthy terms include economic index, the number of computers in the household, and internet access. In the negative direction, the feature with the highest importance is wealth. Most of the parameter estimates are in the positive direction, with only 6 out of the 30 terms being negative.
+
+### Boosted Trees
+
+```{r, echo = FALSE}
+xgb_metrics <- xgb_fit %>%
+  collect_metrics() %>%
+  select(-.estimator, -.config) %>%
+  rename(Metric = .metric,
+         Estimate = .estimate) %>%
+  tableGrob(rows = NULL)
+
+xgb_vip_plot <- xgb_final_workflow %>%
+fit(data = student_data %>%
+      select(-country, -school_id, -year, -student_id)) %>%
+pull_workflow_fit() %>%
+vip(geom = "col")
+
+grid.arrange(xgb_vip_plot, xgb_metrics,
+             ncol=2,
+             widths = c(3,2))
+```
+
+*** 
+The variable importance plot shows the top 10 features identified by the gradient-boosted model. It is interesting what variables were chosen when considering the correlation analysis earlier. The EDA calculated the number of books in the household to be the most correlated with math scores, while this vip plot shows that wealth is the most important. Otherwise, many of the highly correlated variables are present in the graph.
+
+The XGBoost and LASSO regression performed similarly, with the XGBoost model having a slight edge in RMSE (81.3 compared to 86.8). Furthermore, the LASSO regression had a smaller RSQ than the XGBoost model.
+
+
+### Conclusions
+Model performance can be judged by examining the RMSE of the model. The value in the RMSE relies entirely upon the scope of the response variable. Considering that the math scores in the data range from 80 - 962, both of the models did a sufficient job in predicting the scores. The RMSE of the LASSO and XGBoost model were 86.8 and 81.3, respectively. Though a swing of 80 points on a test score is large, the models attained a high-enough level of predictability for them to be used in the future.
+
+The most important features in the models were wealth, economic index, number of books in the household, computer access, and the education of the parents. The least important features included gender and having certain household items like a desk, dishwasher, or room. Besides the gradient-boosted model, the education level of the parents was not considered an important feature.
+
+Most of the important features in the model were also positively correlated with the distribution of math scores. Analogously, many of the least important features were negatively correlated with the model.
+
+#### Future study
+Grouped LASSO regression involves in an extension of the LASSO regression in that it performs variable selection on predefined groups of categorical variables. When running a normal LASSO regression, the model will not select whole factors. Instead, it will select individual dummy variables. Thus, the solution of the model will depend on how the categorical features are encoded.
+
+The group LASSO model will determine if a factor should be selected to begin with, rather than choosing certain groups of the factor. Therefore, performing this type of regression may serve to generate a better solution since the estimates of the model do not have to depend on how the categorical variables are dummy-coded.
+
+Furthermore, multi-level models could improve the predictive power of the current models. Multi-level models are models in which the hierarchical structure of the data is preserved by grouping residual components in each level of the hierarchy. As an example, children will often possess similar characteristics as their parents do when compared to other (random) people.
+
+Note that features present in the data are either biological or socioeconomic features that are outside the control of the children. This means that the children will likely adopt attributes based on their surroundings. Because of this, a multi-level model could work well with the PISA data as inferences could be made to a population of groups, rather than the entire dataset.
