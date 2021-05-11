@@ -6,7 +6,7 @@ This repository contains r scripts used to clean the data and build the models, 
 
 For future work:
 * A grouped lasso regression and a multi-level model would likely serve to improve the predictive power of the current models because of the nature and hierarchal structure of the data.
-* Some of the correlations are hard to disentangle (for example, parental education correlated with economic status and wealth). A principal component analysis needs to be done to explore this issue.
+* Some of the correlations are hard to disentangle (for example, parental education is correlated with economic status and wealth). A principal component analysis needs to be done to explore this issue.
 * The choropleths did not format nicely in the dashboard. It would be nice to have them displayed as a shiny app so that the users could switch between all of the possible summary statistics.
 * There are other basic formatting things that could be changed.
   * The comparison model could be formatted in the correlation funnel.
